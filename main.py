@@ -20,62 +20,132 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments.
-
-    Returns:
-        Parsed repository name and pull request number.
-    """
     parser = argparse.ArgumentParser(
         description="Review a GitHub pull request with specialized CrewAI agents."
     )
-    parser.add_argument("repository", help="GitHub repository in the form owner/repository")
-    parser.add_argument("pull_request", type=int, help="Pull request number")
+
+    parser.add_argument(
+        "repository",
+        help="GitHub repository in the form owner/repository",
+    )
+
+    parser.add_argument(
+        "pull_request",
+        type=int,
+        help="Pull request number",
+    )
+
     return parser.parse_args()
 
 
-def _build_crew() -> Crew:
-    """Build the synchronous review crew.
+def _validate_environment() -> None:
+    required = {
+        "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN", "").strip(),
+        "GROQ_API_KEY": os.getenv("GROQ_API_KEY", "").strip(),
+    }
 
-    Returns:
-        A CrewAI crew containing the specialist and synthesis tasks.
-    """
-    from agents import documentation_agent, optimization_agent, security_agent
-    from tasks import documentation_task, optimization_task, security_task
+    missing = [
+        name
+        for name, value in required.items()
+        if not value
+    ]
+
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variable(s): "
+            + ", ".join(missing)
+        )
+
+
+def _build_crew() -> Crew:
+    from agents import (
+        documentation_agent,
+        optimization_agent,
+        security_agent,
+    )
+
+    from tasks import (
+        documentation_task,
+        optimization_task,
+        security_task,
+    )
 
     return Crew(
-        agents=[security_agent, optimization_agent, documentation_agent],
-        tasks=[security_task, optimization_task, documentation_task],
+        agents=[
+            security_agent,
+            optimization_agent,
+            documentation_agent,
+        ],
+        tasks=[
+            security_task,
+            optimization_task,
+            documentation_task,
+        ],
         process=Process.sequential,
         verbose=False,
     )
 
 
 def main() -> int:
-    """Fetch, review, synthesize, and publish a pull request review.
-
-    Returns:
-        Zero on success and one on an expected configuration or runtime failure.
-    """
     load_dotenv()
+
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
     args = _parse_args()
-    token = os.getenv("GITHUB_TOKEN", "")
 
     github = None
+
     try:
-        LOGGER.info("Starting review for %s#%s.", args.repository, args.pull_request)
+        _validate_environment()
+
+        LOGGER.info(
+            "Starting review for %s#%s.",
+            args.repository,
+            args.pull_request,
+        )
+
+        token = os.getenv("GITHUB_TOKEN", "")
+
         github = authenticate_github(token)
-        code_diff = fetch_pull_request_diff(github, args.repository, args.pull_request)
+
+        code_diff = fetch_pull_request_diff(
+            github,
+            args.repository,
+            args.pull_request,
+        )
+
+        if not code_diff.strip():
+            raise RuntimeError(
+                "The pull request diff is empty; nothing can be reviewed."
+            )
+
+        LOGGER.info(
+            "Building CrewAI review crew using model %s.",
+            os.getenv(
+                "REVIEW_MODEL",
+                "groq/openai/gpt-oss-120b",
+            ),
+        )
 
         crew = _build_crew()
+
         LOGGER.info("Running CrewAI review tasks.")
-        result = crew.kickoff(inputs={"code_diff": code_diff})
+
+        result = crew.kickoff(
+            inputs={
+                "code_diff": code_diff,
+            }
+        )
+
         review_markdown = str(result).strip()
+
         if not review_markdown:
-            raise RuntimeError("CrewAI returned an empty review.")
+            raise RuntimeError(
+                "CrewAI returned an empty review."
+            )
 
         comment_url = post_pull_request_comment(
             github,
@@ -83,11 +153,20 @@ def main() -> int:
             args.pull_request,
             review_markdown,
         )
-        LOGGER.info("Review published: %s", comment_url)
+
+        LOGGER.info(
+            "Review published: %s",
+            comment_url,
+        )
+
         return 0
+
     except Exception:
-        LOGGER.exception("Pull request review failed.")
+        LOGGER.exception(
+            "Pull request review failed."
+        )
         return 1
+
     finally:
         if github is not None:
             github.close()
