@@ -1,60 +1,106 @@
-"""CrewAI agents configured for the AI Code Reviewer pipeline."""
+"""CrewAI agents used by the multi-agent pull request reviewer."""
+
+from __future__ import annotations
 
 import os
+
 from crewai import Agent, LLM
 
-# Initialize Groq LLM using CrewAI's native LLM class
-llm = LLM(
-    model="groq/llama-3.3-70b-versatile",
-    temperature=0.1,
-    api_key=os.getenv("GROQ_API_KEY"),
-)
 
-# 1. Security Specialist Agent
+def _create_llm() -> LLM:
+    """
+    Create the shared CrewAI LLM configuration.
+
+    CrewAI delegates Groq models through LiteLLM, so the model must use
+    the `groq/` provider prefix.
+
+    Environment variables:
+        GROQ_API_KEY:
+            Groq API key.
+        REVIEW_MODEL:
+            Groq model identifier. Defaults to a currently supported model.
+
+    Returns:
+        Configured CrewAI LLM instance.
+
+    Raises:
+        ValueError:
+            If GROQ_API_KEY is missing.
+    """
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+
+    if not api_key:
+        raise ValueError(
+            "GROQ_API_KEY must be set before creating review agents."
+        )
+
+    model = os.getenv(
+        "REVIEW_MODEL",
+        "groq/openai/gpt-oss-120b",
+    ).strip()
+
+    if not model:
+        raise ValueError("REVIEW_MODEL cannot be empty.")
+
+    return LLM(
+        model=model,
+        api_key=api_key,
+        temperature=0,
+        max_tokens=8192,
+    )
+
+
+llm = _create_llm()
+
+
 security_agent = Agent(
-    role="Senior Cybersecurity & Vulnerability Auditor",
+    role="Application Security Reviewer",
     goal=(
-        "Scan provided code diffs for security vulnerabilities, hardcoded secrets, "
-        "injection risks, and OWASP Top 10 compliance issues."
+        "Identify exploitable security defects in the supplied pull request diff "
+        "and recommend concrete remediations."
     ),
     backstory=(
-        "You are an elite application security auditor with extensive experience "
-        "detecting operational vulnerabilities, credential leaks, and flawed authorization "
-        "logic in repository pull requests."
+        "You are a senior application security engineer specializing in OWASP "
+        "vulnerabilities, injection attacks, authentication, authorization, "
+        "secrets exposure, unsafe deserialization, SSRF, path traversal, and "
+        "unsafe handling of untrusted input."
     ),
-    verbose=True,
-    allow_delegation=False,
     llm=llm,
+    verbose=False,
+    allow_delegation=False,
 )
 
-# 2. Performance & Optimization Agent
+
 optimization_agent = Agent(
-    role="Principal Software Optimization Engineer",
+    role="Performance and Code Quality Reviewer",
     goal=(
-        "Analyze code diffs for time and space complexity ($O(n)$ bounds), performance bottlenecks, "
-        "edge case handling, and adherence to clean code standards."
+        "Find performance, correctness, maintainability, resource-management, "
+        "and Python code-quality problems in the supplied pull request diff."
     ),
     backstory=(
-        "You are a systems performance architect specializing in algorithmic refactoring, "
-        "minimizing unnecessary compute and memory usage, and ensuring code follows PEP 8 guidelines."
+        "You are a senior Python engineer with strong knowledge of algorithmic "
+        "complexity, memory usage, I/O performance, error handling, maintainability, "
+        "idiomatic Python, and PEP 8."
     ),
-    verbose=True,
-    allow_delegation=False,
     llm=llm,
+    verbose=False,
+    allow_delegation=False,
 )
 
-# 3. Documentation & Quality Agent
+
 documentation_agent = Agent(
-    role="Lead Technical Writer & Code Quality Specialist",
+    role="Documentation and Review Synthesis Specialist",
     goal=(
-        "Evaluate code diffs for docstring completeness, type annotation coverage, "
-        "readability, and draft structured summary notes for developers."
+        "Produce a concise, actionable Markdown pull request review by synthesizing "
+        "the specialist findings and identifying documentation or clarity issues."
     ),
     backstory=(
-        "You are a technical documentation lead ensuring repositories remain well-typed, "
-        "thoroughly documented, and easy for new maintainers to navigate."
+        "You are an exacting technical writer and senior engineer. You separate "
+        "real defects from subjective style preferences, preserve file and line "
+        "references, eliminate duplicate findings, and produce practical developer "
+        "feedback."
     ),
-    verbose=True,
-    allow_delegation=False,
     llm=llm,
+    verbose=False,
+    allow_delegation=False,
 )
