@@ -95,3 +95,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+# Temporary test edit
+def add(a, b):
+    return a + b
