@@ -20,8 +20,13 @@ def _create_llm() -> ChatGroq:
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
         raise ValueError("GROQ_API_KEY must be set before creating review agents.")
+
+    model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+    if not model_name:
+        raise ValueError("GROQ_MODEL must not be empty.")
+
     return ChatGroq(
-        model_name="llama-3.3-70b-versatile",
+        model=model_name,
         groq_api_key=api_key,
         temperature=0,
     )

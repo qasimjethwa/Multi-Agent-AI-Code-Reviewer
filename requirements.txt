@@ -1,4 +1,4 @@
-crewai
-langchain-groq
-PyGithub
-python-dotenv
+crewai==0.11.2
+langchain-groq==0.1.5
+PyGithub==2.4.0
+python-dotenv==1.0.1
