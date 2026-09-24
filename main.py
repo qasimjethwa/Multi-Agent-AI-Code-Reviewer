@@ -71,8 +71,11 @@ def main() -> int:
         code_diff = fetch_pull_request_diff(github, args.repository, args.pull_request)
 
         crew = _build_crew()
+        for task in crew.tasks:
+            task.description = task.description.format(code_diff=code_diff)
+
         LOGGER.info("Running CrewAI review tasks.")
-        result = crew.kickoff(inputs={"code_diff": code_diff})
+        result = crew.kickoff()
         review_markdown = str(result).strip()
         if not review_markdown:
             raise RuntimeError("CrewAI returned an empty review.")
