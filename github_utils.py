@@ -5,14 +5,14 @@ from __future__ import annotations
 import logging
 
 from github import Auth, Github
-from github.GithubException import BadCredentialsException, GithubException
+from github.GithubException import GithubException
 from github.PullRequest import PullRequest
 
 LOGGER = logging.getLogger(__name__)
 
 
 def authenticate_github(token: str) -> Github:
-    """Authenticate with GitHub and verify that the token is usable.
+    """Create an authenticated GitHub client.
 
     Args:
         token: GitHub personal access token or fine-grained access token.
@@ -22,25 +22,12 @@ def authenticate_github(token: str) -> Github:
 
     Raises:
         ValueError: If the token is empty.
-        BadCredentialsException: If GitHub rejects the credentials.
-        GithubException: If GitHub returns another authentication failure.
     """
     if not token or not token.strip():
         raise ValueError("GITHUB_TOKEN must not be empty.")
 
     github = Github(auth=Auth.Token(token.strip()))
-    try:
-        github.get_user().login
-    except BadCredentialsException:
-        LOGGER.exception("GitHub authentication failed: invalid credentials.")
-        github.close()
-        raise
-    except GithubException:
-        LOGGER.exception("GitHub authentication failed during token verification.")
-        github.close()
-        raise
-
-    LOGGER.info("Authenticated with GitHub.")
+    LOGGER.info("Authenticated GitHub client initialized.")
     return github
 
 
