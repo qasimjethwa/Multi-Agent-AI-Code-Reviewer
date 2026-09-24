@@ -29,7 +29,7 @@ def _create_llm() -> ChatGroq:
         model=model_name,
         groq_api_key=api_key,
         temperature=0,
-        max_tokens=2048,
+        max_tokens=1024,
     )
 
 

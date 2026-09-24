@@ -69,10 +69,11 @@ def main() -> int:
         LOGGER.info("Starting review for %s#%s.", args.repository, args.pull_request)
         github = authenticate_github(token)
         code_diff = fetch_pull_request_diff(github, args.repository, args.pull_request)
+        review_diff = code_diff[:3000] + "\n...[diff truncated]...\n" + code_diff[-3000:]
 
         crew = _build_crew()
         for task in crew.tasks:
-            task.description = task.description.format(code_diff=code_diff)
+            task.description = task.description.format(code_diff=review_diff)
 
         LOGGER.info("Running CrewAI review tasks.")
         result = crew.kickoff()
