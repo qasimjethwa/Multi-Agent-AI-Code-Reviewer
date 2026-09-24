@@ -21,7 +21,7 @@ def _create_llm() -> ChatGroq:
     if not api_key:
         raise ValueError("GROQ_API_KEY must be set before creating review agents.")
 
-    model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
     if not model_name:
         raise ValueError("GROQ_MODEL must not be empty.")
 

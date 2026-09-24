@@ -6,4 +6,4 @@
 2. Enable Actions and open or update a pull request in the repository.
 3. The `AI Code Reviewer` workflow runs the trusted default-branch code, reads the pull request diff through the GitHub API, and posts the generated review as a comment.
 
-The workflow uses `llama-3.3-70b-versatile` through Groq. Fork pull requests are handled by `pull_request_target`, so the workflow must never be changed to execute pull-request code with repository secrets.
+The workflow uses `openai/gpt-oss-120b` through Groq. Fork pull requests are handled by `pull_request_target`, so the workflow must never be changed to execute pull-request code with repository secrets.
