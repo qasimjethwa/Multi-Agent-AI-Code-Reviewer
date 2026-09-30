@@ -1,8 +1,7 @@
 name: AI Code Reviewer
 
-# Runs trusted default-branch code with repository secrets when a pull request is
-# opened or updated. PR code is NEVER checked out or executed here; the reviewer
-# only reads the diff through the GitHub API. Do not change `ref` below.
+# Run the trusted reviewer against PR diffs.
+# The PR branch is NEVER checked out or executed.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -13,7 +12,9 @@ concurrency:
 
 jobs:
   review-pr:
+    # Don't review draft PRs
     if: github.event.pull_request.draft == false
+
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -22,6 +23,8 @@ jobs:
       pull-requests: write
 
     steps:
+      # Always run trusted code from the default branch.
+      # Never execute code from the PR branch with repository secrets.
       - name: Checkout trusted default branch
         uses: actions/checkout@v4
         with:
@@ -31,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
@@ -45,16 +48,33 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           if [ -z "$GROQ_API_KEY" ]; then
-            echo "::error::GROQ_API_KEY repository secret is not configured (Settings > Secrets and variables > Actions)."
+            echo "::error::GROQ_API_KEY repository secret is not configured."
+            echo "::error::Go to Settings > Secrets and variables > Actions."
             exit 1
           fi
 
+          echo "GROQ_API_KEY is configured."
+
       - name: Run AI Code Reviewer
         env:
+          # Groq
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: ${{ vars.GROQ_MODEL || 'openai/gpt-oss-120b' }}
+
+          # GitHub
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          CREWAI_DISABLE_TELEMETRY: 'true'
-          OTEL_SDK_DISABLED: 'true'
-        run: python main.py "$GITHUB_REPOSITORY" "$PR_NUMBER"
+
+          # CrewAI / LiteLLM
+          CREWAI_DISABLE_TELEMETRY: "true"
+          OTEL_SDK_DISABLED: "true"
+          LITELLM_DISABLE_CACHING: "true"
+
+        run: |
+          echo "Starting AI Code Reviewer..."
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Pull Request: #$PR_NUMBER"
+          echo "Model: $GROQ_MODEL"
+
+          python main.py "$GITHUB_REPOSITORY" "$PR_NUMBER"
