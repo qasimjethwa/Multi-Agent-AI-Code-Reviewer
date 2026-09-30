@@ -76,6 +76,7 @@ def build_crew() -> Crew:
         tasks=build_tasks(agents),
         process=Process.sequential,
         verbose=False,
+        cache=False,  # Add this line to disable caching
     )
 
 
