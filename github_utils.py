@@ -61,9 +61,7 @@ def fetch_pull_request_diff(
         raise ValueError("pull_request_number must be positive.")
 
     try:
-        pull_request: PullRequest = github.get_repo(repository_name).get_pull(
-            pull_request_number
-        )
+        pull_request: PullRequest = github.get_repo(repository_name).get_pull(pull_request_number)
         diff_parts: list[str] = []
         for changed_file in pull_request.get_files():
             patch = changed_file.patch
@@ -138,9 +136,7 @@ def post_pull_request_comment(
     try:
         pull_request = github.get_repo(repository_name).get_pull(pull_request_number)
         issue_comment = pull_request.create_issue_comment(comment.strip())
-        LOGGER.info(
-            "Posted review comment to %s#%s.", repository_name, pull_request_number
-        )
+        LOGGER.info("Posted review comment to %s#%s.", repository_name, pull_request_number)
         return issue_comment.html_url
     except GithubException as error:
         if error.status == 401:

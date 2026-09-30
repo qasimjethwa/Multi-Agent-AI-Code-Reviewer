@@ -1,58 +1,60 @@
 name: AI Code Reviewer
 
-# Run trusted repository code with access to repository secrets when a pull
-# request is opened or updated. The reviewer reads the PR through the GitHub API.
+# Runs trusted default-branch code with repository secrets when a pull request is
+# opened or updated. PR code is NEVER checked out or executed here; the reviewer
+# only reads the diff through the GitHub API. Do not change `ref` below.
 on:
   pull_request_target:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   review-pr:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     permissions:
       contents: read
       pull-requests: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout trusted default branch
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
 
-      - name: Verify Python
-        run: |
-          python --version
-          python -c "import sys; print(sys.executable)"
-          python -m pip --version
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip check
-          python -c "import crewai, langchain_groq, github, dotenv; print('Project dependencies imported successfully.')"
 
       - name: Check required configuration
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           if [ -z "$GROQ_API_KEY" ]; then
-            echo "GROQ_API_KEY is not configured for this repository or pull request."
-            echo "Fork pull requests cannot access repository secrets; run this workflow from a trusted branch or configure the secret."
+            echo "::error::GROQ_API_KEY repository secret is not configured (Settings > Secrets and variables > Actions)."
             exit 1
           fi
 
       - name: Run AI Code Reviewer
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROQ_MODEL: openai/gpt-oss-120b
+          GROQ_MODEL: ${{ vars.GROQ_MODEL || 'openai/gpt-oss-120b' }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          python main.py "${{ github.repository }}" "${{ github.event.pull_request.number }}"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CREWAI_DISABLE_TELEMETRY: 'true'
+          OTEL_SDK_DISABLED: 'true'
+        run: python main.py "$GITHUB_REPOSITORY" "$PR_NUMBER"

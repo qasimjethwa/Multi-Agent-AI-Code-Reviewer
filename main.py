@@ -18,75 +18,105 @@ from github_utils import (
 
 LOGGER = logging.getLogger(__name__)
 
+DEFAULT_MAX_DIFF_CHARS = 6000
+TRUNCATION_MARKER = "\n...[diff truncated]...\n"
+REVIEW_HEADER = "## 🤖 AI Code Review\n\n"
 
-def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments.
 
-    Returns:
-        Parsed repository name and pull request number.
-    """
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Review a GitHub pull request with specialized CrewAI agents."
     )
     parser.add_argument("repository", help="GitHub repository in the form owner/repository")
     parser.add_argument("pull_request", type=int, help="Pull request number")
-    return parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the review instead of posting it as a PR comment.",
+    )
+    return parser.parse_args(argv)
 
 
-def _build_crew() -> Crew:
-    """Build the synchronous review crew.
+def truncate_diff(diff: str, max_chars: int = DEFAULT_MAX_DIFF_CHARS) -> str:
+    """Bound the diff size sent to the LLM, keeping its head and tail.
 
-    Returns:
-        A CrewAI crew containing the specialist and synthesis tasks.
+    Diffs that already fit are returned unchanged (the previous implementation
+    duplicated short diffs by always concatenating head and tail).
     """
-    from agents import documentation_agent, optimization_agent, security_agent
-    from tasks import documentation_task, optimization_task, security_task
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive.")
+    if len(diff) <= max_chars:
+        return diff
+    half = max_chars // 2
+    return diff[:half] + TRUNCATION_MARKER + diff[-(max_chars - half) :]
 
+
+def _max_diff_chars() -> int:
+    raw = os.getenv("MAX_DIFF_CHARS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_DIFF_CHARS
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError("MAX_DIFF_CHARS must be an integer.") from error
+    if value <= 0:
+        raise ValueError("MAX_DIFF_CHARS must be positive.")
+    return value
+
+
+def build_crew() -> Crew:
+    """Build the sequential review crew."""
+    from agents import build_agents
+    from tasks import build_tasks
+
+    agents = build_agents()
     return Crew(
-        agents=[security_agent, optimization_agent, documentation_agent],
-        tasks=[security_task, optimization_task, documentation_task],
+        agents=agents.as_list(),
+        tasks=build_tasks(agents),
         process=Process.sequential,
         verbose=False,
     )
 
 
-def main() -> int:
-    """Fetch, review, synthesize, and publish a pull request review.
+def run_review(code_diff: str) -> str:
+    """Run the crew over a diff and return the Markdown review."""
+    crew = build_crew()
+    result = crew.kickoff(inputs={"code_diff": code_diff})
+    review_markdown = str(getattr(result, "raw", result) or "").strip()
+    if not review_markdown:
+        raise RuntimeError("CrewAI returned an empty review.")
+    return review_markdown
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Fetch, review, and publish a pull request review.
 
     Returns:
-        Zero on success and one on an expected configuration or runtime failure.
+        Zero on success and one on a configuration or runtime failure.
     """
     load_dotenv()
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    args = _parse_args()
-    token = os.getenv("GITHUB_TOKEN", "")
+    args = _parse_args(argv)
 
     github = None
     try:
         LOGGER.info("Starting review for %s#%s.", args.repository, args.pull_request)
-        github = authenticate_github(token)
+        github = authenticate_github(os.getenv("GITHUB_TOKEN", ""))
         code_diff = fetch_pull_request_diff(github, args.repository, args.pull_request)
-        review_diff = code_diff[:3000] + "\n...[diff truncated]...\n" + code_diff[-3000:]
-
-        crew = _build_crew()
-        for task in crew.tasks:
-            task.description = task.description.format(code_diff=review_diff)
+        review_diff = truncate_diff(code_diff, _max_diff_chars())
 
         LOGGER.info("Running CrewAI review tasks.")
-        result = crew.kickoff()
-        review_markdown = str(result).strip()
-        if not review_markdown:
-            raise RuntimeError("CrewAI returned an empty review.")
+        review_markdown = REVIEW_HEADER + run_review(review_diff)
 
-        comment_url = post_pull_request_comment(
-            github,
-            args.repository,
-            args.pull_request,
-            review_markdown,
-        )
+        if args.dry_run:
+            print(review_markdown)
+            return 0
+
+        comment_url = post_pull_request_comment(github, args.repository, args.pull_request, review_markdown)
         LOGGER.info("Review published: %s", comment_url)
         return 0
     except Exception:
