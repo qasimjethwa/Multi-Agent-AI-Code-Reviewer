@@ -57,4 +57,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           CREWAI_DISABLE_TELEMETRY: 'true'
           OTEL_SDK_DISABLED: 'true'
+          LITELLM_DISABLE_CACHING: 'true'
+          LITELLM_DROP_PARAMS: 'true'
         run: python main.py "$GITHUB_REPOSITORY" "$PR_NUMBER"
